@@ -15,6 +15,9 @@
 
 #define KERNEL_PATH "kernel.cl"
 
+    // Input0 = Image
+    // Input1 = Mask
+    // Result = Empty Matrix with image channels
 void OpenCLConvolution2D(Matrix *input0, Matrix *input1, Matrix *result)
 {
     // Load external OpenCL kernel code
@@ -62,8 +65,18 @@ void OpenCLConvolution2D(Matrix *input0, Matrix *input1, Matrix *result)
     CHECK_ERR(err, "clCreateKernel");
 
     //@@ Allocate GPU memory here
+    device_a = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float) * input0->shape[0] * input0->shape[1] * IMAGE_CHANNELS,NULL, &err);
+    CHECK_ERR(err, "clCreateBuffer");
+    device_b = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float) * input1->shape[0] * input1->shape[1],NULL, &err);
+    CHECK_ERR(err, "clCreateBuffer");
+    device_c = clCreateBuffer(context, CL_MEM_WRITE_ONLY, sizeof(float) * result->shape[0] * result->shape[1] * IMAGE_CHANNELS,NULL, &err);
+    CHECK_ERR(err, "clCreateBuffer");
 
     //@@ Copy memory to the GPU here
+    err = clEnqueueWriteBuffer(queue, device_a, CL_TRUE, 0, sizeof(float) * input0->shape[0] * input0->shape[1]* IMAGE_CHANNELS, input0->data ,0,NULL,NULL);
+    CHECK_ERR(err,"clEnqueueWriteBuffer");
+    err = clEnqueueWriteBuffer(queue, device_b, CL_TRUE, 0, sizeof(float) * input1->shape[0] * input1->shape[1], input1->data,0,NULL,NULL);
+    CHECK_ERR(err,"clEnqueueWriteBuffer");
 
     // Set the arguments to our compute kernel
     // __global float * inputData, __global float * outputData, __constant float * maskData,
@@ -85,12 +98,27 @@ void OpenCLConvolution2D(Matrix *input0, Matrix *input1, Matrix *result)
     CHECK_ERR(err, "clSetKernelArg 6");
 
     // @@ define local and global work sizes
+    size_t global_item_size[2] = {input0->shape[1], input0->shape[0]};
 
     //@@ Launch the GPU Kernel here
+    err = clEnqueueNDRangeKernel(queue, kernel, 2, NULL, global_item_size, NULL, 0, NULL, NULL);
+    CHECK_ERR(err, "clEnqueueNDRangeKernel");
 
     //@@ Copy the GPU memory back to the CPU here
+    err = clEnqueueReadBuffer(queue, device_c, CL_TRUE, 0, result->shape[0] * result->shape[1] * sizeof(float) * IMAGE_CHANNELS, result->data, 0, NULL, NULL);
+    CHECK_ERR(err, "clEnqueueReadBuffer");
+
+
+
 
     //@@ Free the GPU memory here
+    clReleaseMemObject(device_a);
+    clReleaseMemObject(device_b);
+    clReleaseMemObject(device_c);
+    clReleaseProgram(program);
+    clReleaseKernel(kernel);
+    clReleaseCommandQueue(queue);
+    clReleaseContext(context);
 }
 
 int main(int argc, char *argv[])
@@ -123,6 +151,8 @@ int main(int argc, char *argv[])
     int rows, cols;
     //@@ Update these values for the output rows and cols of the output
     //@@ Do not use the results from the answer image
+    rows = host_a.shape[0];
+    cols = host_a.shape[1];
 
     // Allocate the memory for the target.
     host_c.shape[0] = rows;
